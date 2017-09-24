@@ -1,0 +1,31 @@
+apply plugin: "ch.so.agi.gretl"
+apply plugin: "de.undercouch.download"
+
+import ch.so.agi.gretl.tasks.*
+import ch.so.agi.gretl.steps.*
+import de.undercouch.gradle.tasks.download.Download
+
+task validateXTF(type: IliValidator) {
+    dataFiles = ["/Users/stefan/Downloads/rohr_20170915_umbau_errors.xtf"]
+}
+
+task downloadZipFile(type: Download) {
+    src "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/SO/2547.zip"
+    dest "/Users/stefan/Downloads/opendata/"
+    overwrite true
+}
+
+task unzipFile(dependsOn: downloadZipFile, type: Copy) {
+    //from zipTree(downloadZipFile.dest)
+    from {
+        file('/Users/stefan/Downloads/opendata/').listFiles().findAll {
+            it.name.endsWith('.zip')
+        }.collect { 
+            zipTree(it) 
+        }
+    }
+    into "/Users/stefan/Downloads/opendata/"
+    include '**/*.itf'
+    include '**/*.ITF'
+
+}
