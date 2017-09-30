@@ -1,0 +1,230 @@
+description = """\n
+Imports cadastral surveying data which can be found on 
+https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D
+into a PostgreSQL/PostGIS database with ili2db and GRETL.
+
+It creates the necessary database schema and tables.
+
+Spatial Is Not Special!
+"""
+
+apply plugin: "ch.so.agi.gretl"
+apply plugin: "de.undercouch.download"
+
+import ch.so.agi.gretl.tasks.*
+import ch.so.agi.gretl.steps.*
+import de.undercouch.gradle.tasks.download.Download
+
+ext {
+    //fosnrs = [2401,2402,2403,2404,2405,2406,2407,2408,2421,2422,2423,2424,2425,2426,2427,2428,2429,2445,2455,2456,2457,2461,2463,2464,2465,2471,2472,2473,2474,2475,2476,2477,2478,2479,2480,2481,2491,2492,2493,2495,2497,2498,2499,2500,2501,2502,2503,2511,2513,2514,2516,2517,2518,2519,2520,2523,2524,2525,2526,2527,2528,2529,2530,2532,2534,2535,2541,2542,2543,2544,2545,2546,2547,2548,2549,2550,2551,2553,2554,2555,2556,2571,2572,2573,2574,2575,2576,2578,2579,2580,2581,2582,2583,2584,2585,2586,2601,2611,2612,2613,2614,2615,2616,2617,2618,2619,2620,2621,2622]    
+    //fosnrs = [2401,2402,2403,2404,2405,2406,2407,2408]
+    fosnrs = [2524,2549]
+    url = "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/SO/" // -> It's actually LV95?!
+    //downloadDir = System.getProperty("java.io.tmpdir") + File.separator
+    downloadDir = "/Users/stefan/Downloads/opendata/"
+    //dbUrl = "jdbc:postgresql://geodb-dev.cgjofbdf5rqg.eu-central-1.rds.amazonaws.com:5432/xanadu2"
+    //dbHost = "999.999.999.999"
+    dbHost = "geodb-dev.cgjofbdf5rqg.eu-central-1.rds.amazonaws.com"
+    dbPort = "5432"
+    dbDatabase = "xanadu2"
+    dbUser = "stefan"
+    dbPass = System.env.dbPass
+    dbSchema = "av_avdpool_ch"
+    modelName = "DM01AVCH24LV95D"
+    buildings = null
+    emailPass = System.env.emailPass
+}
+
+
+task initDatabase(type: Ili2pgImportSchema) {
+    description  = "Creates database schema and empty tables."
+
+    database = ["jdbc:postgresql://"+dbHost+":"+dbPort+"/"+dbDatabase, dbUser, dbPass]
+    dbschema = dbSchema
+    models = modelName
+    disableValidation = true
+    defaultSrsCode = "2056"
+    smart1Inheritance = true
+    createBasketCol = true
+    createDatasetCol = true
+    sqlEnableNull = true
+    importTid = true
+    nameByTopic = true
+    createEnumTabs = true
+
+    // Can be a transfer file, a local ili file or
+    // the model name.
+    iliFile = modelName
+}
+
+
+// Create dynamic tasks for every dataset we want to download.
+fosnrs.each { fosnr ->
+    task "downloadZipFile_$fosnr"(type: Download) {
+        description = "Download dataset $fosnr from swisstopo."
+
+        src "$url$fosnr" + ".zip"
+        dest downloadDir
+    }
+}
+
+
+// This is sort of a join tasks. It's just syntactic sugar
+// to download all datasets with a 'download'-named task.
+// See how dependsOn works.
+task downloadAllZipFiles() {
+    description = "Downloads all files from swisstopo. "
+}
+
+downloadAllZipFiles.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('downloadZipFile_') }
+}
+
+
+task unzipFiles(type: Copy, dependsOn: 'downloadAllZipFiles') {
+    description = "Unzip all files in the download directory. " + 
+    "Copy only *.itf/*.ITF files from zip files."
+        
+    outputs.upToDateWhen {false}
+
+    from {
+        file(downloadDir).listFiles().findAll {
+            it.name.endsWith('.zip')
+        }.collect { 
+            zipTree(it) 
+        }
+    }
+    into downloadDir
+    include '**/*.itf'
+    include '**/*.ITF'
+}
+
+
+// Either loop through fosnr list or the download directory.
+// Depends on your needs. If you loop through download directory
+// the tasks will not be shown (gradle tasks --all) if the 
+// directory contains no transfer files.
+fileTree(dir: downloadDir, includes: ['**/*.itf', '**/*.ITF']).each { file ->
+    def fosnr = file.getName().take(4)
+    task "importLocalDataset_$fosnr"(type: Ili2pgReplace) {
+        description = "Imports a local dataset $fosnr into database."
+
+        database = ["jdbc:postgresql://"+dbHost+":"+dbPort+"/"+dbDatabase, dbUser, dbPass]
+        dbschema = dbSchema
+        models = modelName
+        disableValidation = true
+        dataset = fosnr
+        dataFile = file  
+    }
+}
+
+// Like downloadAllZipFiles task, it's just for convenience.
+task importAllLocalDatasets() {
+    description = "Imports all local datasets into database. "
+}
+
+importAllLocalDatasets.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('importLocalDataset_') }
+}
+
+fosnrs.each { fosnr ->
+    task "importDataset_$fosnr"(type: Ili2pgReplace) {
+        description = "Imports a dataset $fosnr into database."
+
+        database = ["jdbc:postgresql://"+dbHost+":"+dbPort+"/"+dbDatabase, dbUser, dbPass]
+        dbschema = dbSchema
+        models = modelName
+        disableValidation = true
+        dataset = fosnr
+        dataFile = file(downloadDir + fosnr + ".itf")  
+    }
+}
+
+task importAllDatasets() {
+    description = "Imports all datasets into database. "
+}
+
+importAllDatasets.dependsOn {
+    tasks.findAll { task -> task.name.startsWith('importDataset_') }
+}
+
+
+task cleanUp(type: Delete) {
+    description = "Delete everything in the download directory."
+   
+    outputs.upToDateWhen {false}
+
+    onlyIf {
+        importAllDatasets.state.failure == null
+    }
+
+    delete fileTree(dir: downloadDir, include: '**/*.*')
+}
+//importAllDatasets.finalizedBy('cleanUp')
+
+task numberOfBuildings() {
+    description = "Get the number of buildings of all imported datasets."
+    
+    doLast {
+        println "fubar"
+        def driverName = 'org.postgresql.Driver'
+        Class.forName(driverName)
+        groovy.sql.Sql sql = Sql.newInstance(
+            "jdbc:postgresql://"+dbHost+":"+dbPort+"/"+dbDatabase, 
+            dbUser, 
+            dbPass, 
+            driverName
+        )
+        def first = sql.firstRow("SELECT count(*) as count FROM av_avdpool_ch.bodenbedeckung_boflaeche WHERE art='Gebaeude';")
+        buildings = first.count
+        sql.close() 
+    }
+}
+
+// This sucks... 
+// We need this to make simple sql queries in tasks.
+repositories {
+    jcenter()
+}
+
+configurations {
+    jdbcdriver
+}
+
+dependencies {
+    jdbcdriver 'org.postgresql:postgresql:9.4.1212.jre7'
+}
+
+import groovy.sql.Sql
+task jdbcClassLoader() {
+    configurations.jdbcdriver.files.each {
+        Sql.classLoader.addURL(it.toURI().toURL())
+    }
+}
+// Stop sucking.
+
+import org.apache.commons.mail.DefaultAuthenticator
+import org.apache.commons.mail.Email
+import org.apache.commons.mail.SimpleEmail
+
+gradle.buildFinished { buildResult ->
+    println "\nBUILD FINISHED"
+
+    def failure = buildResult.failure
+
+    // Send email only if build was sucessful and we ran the 
+    // query task.
+    if (!failure && buildings) {
+        Email email = new SimpleEmail()
+        email.setHostName("smtp.gmail.com")
+        email.setSmtpPort(465)
+        email.setAuthenticator(new DefaultAuthenticator("stefan.ziegler.de", emailPass))
+        email.setSSLOnConnect(true)
+        email.setFrom("stefan.ziegler.de@gmail.com")
+        email.setSubject(project.name)
+        email.setMsg("There are " + buildings + " buildings in the database.")
+        email.addTo("edi.gonzales@gmail.com")
+        email.send()
+    }
+}
+
