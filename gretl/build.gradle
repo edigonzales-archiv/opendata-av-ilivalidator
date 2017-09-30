@@ -20,15 +20,14 @@ ext {
     //fosnrs = [2401,2402,2403,2404,2405,2406,2407,2408]
     fosnrs = [2524,2549]
     url = "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/SO/" // -> It's actually LV95?!
-    //downloadDir = System.getProperty("java.io.tmpdir") + File.separator
-    downloadDir = "/Users/stefan/Downloads/opendata/"
-    //dbUrl = "jdbc:postgresql://geodb-dev.cgjofbdf5rqg.eu-central-1.rds.amazonaws.com:5432/xanadu2"
-    //dbHost = "999.999.999.999"
-    dbHost = "geodb-dev.cgjofbdf5rqg.eu-central-1.rds.amazonaws.com"
+    downloadDir = System.getProperty("java.io.tmpdir") + File.separator
+    //downloadDir = "/Users/stefan/Downloads/opendata/"
+    dbHost = "999.999.999.999"
+    //dbHost = "geodb-dev.cgjofbdf5rqg.eu-central-1.rds.amazonaws.com"
     dbPort = "5432"
     dbDatabase = "xanadu2"
     dbUser = "stefan"
-    dbPass = System.env.dbPass
+    dbPass = "ParadiseByTheDashboardLight" // use env var here
     dbSchema = "av_avdpool_ch"
     modelName = "DM01AVCH24LV95D"
     buildings = null
@@ -161,70 +160,3 @@ task cleanUp(type: Delete) {
     delete fileTree(dir: downloadDir, include: '**/*.*')
 }
 //importAllDatasets.finalizedBy('cleanUp')
-
-task numberOfBuildings() {
-    description = "Get the number of buildings of all imported datasets."
-    
-    doLast {
-        println "fubar"
-        def driverName = 'org.postgresql.Driver'
-        Class.forName(driverName)
-        groovy.sql.Sql sql = Sql.newInstance(
-            "jdbc:postgresql://"+dbHost+":"+dbPort+"/"+dbDatabase, 
-            dbUser, 
-            dbPass, 
-            driverName
-        )
-        def first = sql.firstRow("SELECT count(*) as count FROM av_avdpool_ch.bodenbedeckung_boflaeche WHERE art='Gebaeude';")
-        buildings = first.count
-        sql.close() 
-    }
-}
-
-// This sucks... 
-// We need this to make simple sql queries in tasks.
-repositories {
-    jcenter()
-}
-
-configurations {
-    jdbcdriver
-}
-
-dependencies {
-    jdbcdriver 'org.postgresql:postgresql:9.4.1212.jre7'
-}
-
-import groovy.sql.Sql
-task jdbcClassLoader() {
-    configurations.jdbcdriver.files.each {
-        Sql.classLoader.addURL(it.toURI().toURL())
-    }
-}
-// Stop sucking.
-
-import org.apache.commons.mail.DefaultAuthenticator
-import org.apache.commons.mail.Email
-import org.apache.commons.mail.SimpleEmail
-
-gradle.buildFinished { buildResult ->
-    println "\nBUILD FINISHED"
-
-    def failure = buildResult.failure
-
-    // Send email only if build was sucessful and we ran the 
-    // query task.
-    if (!failure && buildings) {
-        Email email = new SimpleEmail()
-        email.setHostName("smtp.gmail.com")
-        email.setSmtpPort(465)
-        email.setAuthenticator(new DefaultAuthenticator("stefan.ziegler.de", emailPass))
-        email.setSSLOnConnect(true)
-        email.setFrom("stefan.ziegler.de@gmail.com")
-        email.setSubject(project.name)
-        email.setMsg("There are " + buildings + " buildings in the database.")
-        email.addTo("edi.gonzales@gmail.com")
-        email.send()
-    }
-}
-
