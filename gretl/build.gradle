@@ -28,8 +28,6 @@ ext {
     dbPass = "ParadiseByTheDashboardLight" // use env var here
     dbSchema = "av_avdpool_ch"
     modelName = "DM01AVCH24LV95D"
-    buildings = null
-    emailPass = System.env.emailPass
 }
 
 
