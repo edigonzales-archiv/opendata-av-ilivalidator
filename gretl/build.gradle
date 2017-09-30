@@ -48,6 +48,7 @@ task initDatabase(type: Ili2pgImportSchema) {
     importTid = true
     nameByTopic = true
     createEnumTabs = true
+    setupPgExt = true
 
     // Can be a transfer file, a local ili file or
     // the model name.
