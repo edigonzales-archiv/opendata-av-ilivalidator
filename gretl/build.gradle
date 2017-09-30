@@ -21,9 +21,7 @@ ext {
     fosnrs = [2524,2549]
     url = "https://data.geo.admin.ch/ch.swisstopo-vd.amtliche-vermessung/DM01AVCH24D/ITF/SO/" // -> It's actually LV95?!
     downloadDir = System.getProperty("java.io.tmpdir") + File.separator
-    //downloadDir = "/Users/stefan/Downloads/opendata/"
     dbHost = "999.999.999.999"
-    //dbHost = "geodb-dev.cgjofbdf5rqg.eu-central-1.rds.amazonaws.com"
     dbPort = "5432"
     dbDatabase = "xanadu2"
     dbUser = "stefan"
